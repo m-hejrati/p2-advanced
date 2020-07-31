@@ -173,8 +173,9 @@ int main() {
     char *device; //= "ens33"; // device to sniff on
     pcap_t *handle; // session handle
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
-    char filter_exp[] = "tcp port 80"; // filter expression
-    struct bpf_program filter; // compiled filter
+    char filter_exp[] = "tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)"; // filter expression (second part of above expression just filter packet with body)
+    //char filter_exp[] = "dst port 8765";
+	struct bpf_program filter; // compiled filter
     bpf_u_int32 subnet_mask, ip;
 	struct pcap_pkthdr header; //header that pcap gives us
 	const u_char *packet; // actual packet
