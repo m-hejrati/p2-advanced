@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <syslog.h>
 
 /* ethernet headers are always exactly 14 bytes [1] */
 #define SIZE_ETHERNET 14
@@ -73,26 +74,33 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
 		printf("   * Invalid IP header length: %u bytes\n", size_ip);
+    	syslog(LOG_ERR, " * Invalid IP header length: %u bytes\n", size_ip);
 		return;
 	}
 
     static int count = 1; // packet counter
-    printf("\nPacket %d:\n", count);
+    printf("\nPacket %d logged\n", count);
+    syslog(LOG_INFO, "Packet %d:", count);
     count++;
 
-	printf("     Length: %d bytes\n", ntohs(ip->ip_len));
+	//printf("     Length: %d bytes\n", ntohs(ip->ip_len));
+    syslog(LOG_INFO, "     Length: %d bytes\n", ntohs(ip->ip_len));
 
 	/* print source and destination IP addresses */
-	printf("       From: %s\n", inet_ntoa(ip->ip_src));
-	printf("         To: %s\n", inet_ntoa(ip->ip_dst));
+	//printf("       From: %s\n", inet_ntoa(ip->ip_src));
+	syslog(LOG_INFO, "       From: %s\n", inet_ntoa(ip->ip_src));
+	//printf("         To: %s\n", inet_ntoa(ip->ip_dst));
+	syslog(LOG_INFO, "         To: %s\n", inet_ntoa(ip->ip_dst));
 
 	/* determine protocol */	
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
-			printf("   Protocol: TCP\n");
+			//printf("   Protocol: TCP\n");
+			syslog(LOG_INFO, "   Protocol: TCP\n");
 			break;
 		default:
-			printf("   Protocol: another\n");
+			//printf("   Protocol: another\n");
+			syslog(LOG_INFO, "   Protocol: another\n");	
 			return;
 	}
 
@@ -102,11 +110,14 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
 		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
+    	syslog(LOG_ERR, "   * Invalid TCP header length: %u bytes\n", size_tcp);
 		return;
 	}
 	
-	printf("   Src port: %d\n", ntohs(tcp->th_sport));
-	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+	//printf("   Src port: %d\n", ntohs(tcp->th_sport));
+	syslog(LOG_INFO, "   Src port: %d\n", ntohs(tcp->th_sport));
+	//printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(tcp->th_dport));
 	
 	/* define/compute tcp payload (segment) offset */
 	payload = (u_char *)(packet_body + SIZE_ETHERNET + size_ip + size_tcp);
@@ -114,7 +125,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 	/* compute tcp payload (segment) size */
 	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
 	
-	printf("    Payload: %d bytes\n", size_payload);
+	//printf("    Payload: %d bytes\n", size_payload);
+	syslog(LOG_INFO, "    Payload: %d bytes\n", size_payload);
 
     return;
 }
@@ -132,6 +144,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
     if( pcap_findalldevs( &alldevsp , errbuf) )
     {
         printf("Error finding devices : %s" , errbuf);
+		syslog(LOG_ERR, "Error finding devices : %s" , errbuf);
         exit(1);
     }
     printf("Done");
@@ -167,6 +180,9 @@ int main() {
 	const u_char *packet; // actual packet
 	int num_packets; // number of packets to capture 
 
+	// open logging machine
+	openlog("p2-advanced | sniffer", LOG_PID, LOG_USER);
+
 	// select device
 	device = select_device();
 
@@ -177,17 +193,20 @@ int main() {
     handle = pcap_open_live(device, BUFSIZ, 1, 0, error_buffer);
     if (handle == NULL) {
         printf("Couldn't open device %s - %s\n", device, error_buffer);
+		syslog(LOG_ERR, "Couldn't open device %s - %s\n", device, error_buffer);
         return 1;
     }
 
 	// compile the filter expression
     if (pcap_compile(handle, &filter, filter_exp, 0, ip) == -1) {
         printf("Bad filter - %s\n", pcap_geterr(handle));
+		syslog(LOG_ERR, "Bad filter - %s\n", pcap_geterr(handle));
         return 1;
     }
 	// apply the compiled filter
     if (pcap_setfilter(handle, &filter) == -1) {
         printf("Error setting filter - %s\n", pcap_geterr(handle));
+		syslog(LOG_ERR, "Error setting filter - %s\n", pcap_geterr(handle));
         return 1;
     }
 
@@ -195,6 +214,8 @@ int main() {
 	printf("\nStart sniffing...\n");
 	printf("Device: %s\n", device);
 	printf("Number of packets: %d\n\n", num_packets);
+    syslog(LOG_INFO, "Start sniffing on device: %s and %d packets", device, num_packets);
+
 
     // start sniffing
 	pcap_loop(handle, num_packets, packet_handler, NULL);
@@ -203,5 +224,6 @@ int main() {
 	pcap_freecode(&filter);
 	pcap_close(handle);
 
+    closelog();
     return 0;
 }
