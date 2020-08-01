@@ -54,6 +54,24 @@ struct sniff_tcp {
         u_short th_urp;                 /* urgent pointer */
 };
 
+// print readble part of payload
+void print_payload(const u_char *payload, int len) {
+
+	const u_char *ch = payload;
+	char printable[10000];
+	int j = 0;
+	
+	// find printable character and save them into a new string and then log it
+	for(int i = 0; i < len; i++) {
+		if (isprint(*ch)){
+			printable[j] = *ch;
+			j++;
+		}
+		ch++;
+	}
+   	syslog(LOG_INFO, "    payload: %s", printable);
+}
+
 void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body) {
     
 	/* declare pointers to packet headers */
@@ -75,7 +93,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 	if (size_ip < 20) {
 		printf("   * Invalid IP header length: %u bytes\n", size_ip);
     	syslog(LOG_ERR, " * Invalid IP header length: %u bytes\n", size_ip);
-		return;
+		//return;
 	}
 
     static int count = 1; // packet counter
@@ -101,7 +119,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 		default:
 			//printf("   Protocol: another\n");
 			syslog(LOG_INFO, "   Protocol: another\n");	
-			return;
+            break;
+            //return;
 	}
 
 
@@ -128,6 +147,9 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 	//printf("    Payload: %d bytes\n", size_payload);
 	syslog(LOG_INFO, "    Payload: %d bytes\n", size_payload);
 
+	//save payload
+	if (size_payload > 0)
+		print_payload(payload, size_payload);
     return;
 }
 
@@ -173,8 +195,8 @@ int main() {
     char *device; //= "ens33"; // device to sniff on
     pcap_t *handle; // session handle
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
-    char filter_exp[] = "tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)"; // filter expression (second part of above expression just filter packet with body)
-    //char filter_exp[] = "dst port 8765";
+    //char filter_exp[] = "tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)"; // filter expression (second part of above expression just filter packet with body)
+    char filter_exp[] = "dst port 8765";
 	struct bpf_program filter; // compiled filter
     bpf_u_int32 subnet_mask, ip;
 	struct pcap_pkthdr header; //header that pcap gives us
