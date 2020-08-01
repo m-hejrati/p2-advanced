@@ -11,7 +11,7 @@ print(response.text)
 print()
 
 myPostData = {'myPostKey': 'myPostValue'}
-response = requests.post(url, data = mydata)
+response = requests.post(url, data = myPostData)
 print(response.status_code)
 print(response.text)
 
