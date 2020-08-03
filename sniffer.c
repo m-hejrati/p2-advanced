@@ -1,4 +1,3 @@
-
 #include <pcap.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,7 +6,7 @@
 #include <arpa/inet.h>
 #include <syslog.h>
 
-/* ethernet headers are always exactly 14 bytes [1] */
+// ethernet headers are always exactly 14 bytes
 #define SIZE_ETHERNET 14
 
 /* IP header */
@@ -54,14 +53,14 @@ struct sniff_tcp {
         u_short th_urp;                 /* urgent pointer */
 };
 
-// print readble part of payload
+// find and save readable part of payload
 char* find_printable_payload(const u_char *payload, int len) {
 
 	const u_char *ch = payload;
 	char printable[10000] = "";
 	int j = 0;
 	
-	// find printable character and save them into a new string and then log it
+	// find printable character and save them into a new string.
 	for(int i = 0; i < len; i++) {
 		if (isprint(*ch)){
 			printable[j] = *ch;
@@ -74,12 +73,13 @@ char* find_printable_payload(const u_char *payload, int len) {
 	return tmp;
 }
 
+// print headers of IP protocol
 void print_ip_header(const struct sniff_ip *ip){
 
 	//printf("     Length: %d bytes\n", ntohs(ip->ip_len));
     syslog(LOG_INFO, "     Length: %d bytes\n", ntohs(ip->ip_len));
 
-	/* print source and destination IP addresses */
+	// print source and destination IP addresses
 	//printf("       From: %s\n", inet_ntoa(ip->ip_src));
 	syslog(LOG_INFO, "       From: %s\n", inet_ntoa(ip->ip_src));
 
@@ -88,6 +88,7 @@ void print_ip_header(const struct sniff_ip *ip){
 
 }
 
+// print headers of TCP protocol
 void print_tcp_header(const struct sniff_tcp *tcp, int size_payload){
 
 	//printf("   Src port: %d\n", ntohs(tcp->th_sport));
@@ -101,18 +102,19 @@ void print_tcp_header(const struct sniff_tcp *tcp, int size_payload){
 	
 }
 
+// the major part of the program that gets a packet and extract important data of it
 void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body) {
     
-	/* declare pointers to packet headers */
-	const struct sniff_ip *ip;              /* The IP header */
-	const struct sniff_tcp *tcp;            /* The TCP header */
-	const char *payload;                    /* Packet payload */
+	// declare pointers to packet headers
+	const struct sniff_ip *ip;              // The IP header
+	const struct sniff_tcp *tcp;            // The TCP header
+	const char *payload;                    // Packet payload
 
 	int size_ip;
 	int size_tcp;
 	int size_payload;
 
-	/* define/compute ip header offset */
+	// define/compute ip header offset
 	ip = (struct sniff_ip*)(packet_body + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
@@ -121,7 +123,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 		return;
 	}
 
-	/* define/compute tcp header offset */
+	// define/compute tcp header offset //
 	tcp = (struct sniff_tcp*)(packet_body + SIZE_ETHERNET + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
@@ -130,17 +132,18 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 		return;
 	}
 
-	/* define/compute tcp payload (segment) offset */
+	// define/compute tcp payload (segment) offset //
 	payload = (u_char *)(packet_body + SIZE_ETHERNET + size_ip + size_tcp);
 	
-	/* compute tcp payload (segment) size */
+	// compute tcp payload (segment) size //
 	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
 	
-	//save payload
+	// extract and save payload
 	if (size_payload > 0){
 		
 		char *printable_payload = find_printable_payload(payload, size_payload);
 
+		// find just http packet
 		if (strstr(printable_payload, "HTTP") != NULL){
 
 			static int count = 1; // packet counter
@@ -148,24 +151,19 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 			syslog(LOG_INFO, "Packet %d:", count);
 			count++;
 
-			/* determine protocol */	
+			// determine protocol
 			switch(ip->ip_p) {
 				case IPPROTO_TCP:
 					syslog(LOG_INFO, "   Protocol: TCP\n");
 					break;
-				case IPPROTO_IP:
-					syslog(LOG_INFO, "   Protocol: IP\n");
-					//return;
-					break;
+
 				default:
 					printf("   Protocol: unknown\n");
 					return;
 			}
+
 			print_ip_header(ip);
-
-			if (ip->ip_p == IPPROTO_TCP)
-				print_tcp_header(tcp, size_payload);
-
+			print_tcp_header(tcp, size_payload);
 			syslog(LOG_INFO, "    payload: %s", printable_payload);
 
 		}
@@ -173,7 +171,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
     return;
 }
 
- char* select_device(){
+// show all available device and choose one of them to sniff
+char* select_device(){
 
     pcap_if_t *alldevsp , *device;
     char devs[100][100];
@@ -181,7 +180,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 	int count = 1;
 	int n;
 
-	//First get the list of available devices
+	//get the list of available devices
     printf("Finding available devices ... ");
     if( pcap_findalldevs( &alldevsp , errbuf) )
     {
@@ -203,21 +202,22 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
         count++;
     }
      
-    //Ask user which device to sniff
+    //ask user to select a device to sniff
     printf("\nEnter the number of device you want to sniff : ");
     scanf("%d" , &n);
+
 	char* dev = devs[n];
     return dev;
 
  }
 
 int main() {
-    char *device; //= "ens33"; // device to sniff on
+    char *device; // device to sniff on
     pcap_t *handle; // session handle
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
-    char filter_exp[] = "tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)"; // filter expression (second part of above expression just filter packet with body)
-    //char filter_exp[] = "port 8765";
-    char filter_exp[10];
+	// filter expression (second part of the following expression means to filter packet with body)
+    //char filter_exp[] = "tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)"; 
+    char filter_exp[] = "tcp port 8765 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
 	struct bpf_program filter; // compiled filter
     bpf_u_int32 subnet_mask, ip;
 	struct pcap_pkthdr header; //header that pcap gives us
@@ -259,7 +259,6 @@ int main() {
 	printf("Device: %s\n", device);
 	printf("Number of packets: %d\n\n", num_packets);
     syslog(LOG_INFO, "Start sniffing on device: %s and %d packets", device, num_packets);
-
 
     // start sniffing
 	pcap_loop(handle, num_packets, packet_handler, NULL);
