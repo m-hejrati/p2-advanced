@@ -3,58 +3,23 @@
 #include <string.h>
 #include <stdlib.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <syslog.h>
+#include<arpa/inet.h> // for inet_ntoa()
+#include<netinet/udp.h>   // for udp header
+#include<netinet/tcp.h>   // for tcp header
+#include<netinet/ip.h>    // for ip header
 
-// ethernet headers are always exactly 14 bytes
-#define SIZE_ETHERNET 14
+#include<arpa/inet.h> // for inet_ntoa()
+#include<net/ethernet.h>
+#include<netinet/ip_icmp.h>	//Provides declarations for icmp header
+#include<netinet/udp.h>	//Provides declarations for udp header
+#include<netinet/tcp.h>	//Provides declarations for tcp header
+#include<netinet/ip.h>	//Provides declarations for ip header
 
-/* IP header */
-struct sniff_ip {
-        u_char  ip_vhl;                 /* version << 4 | header length >> 2 */
-        u_char  ip_tos;                 /* type of service */
-        u_short ip_len;                 /* total length */
-        u_short ip_id;                  /* identification */
-        u_short ip_off;                 /* fragment offset field */
-        #define IP_RF 0x8000            /* reserved fragment flag */
-        #define IP_DF 0x4000            /* dont fragment flag */
-        #define IP_MF 0x2000            /* more fragments flag */
-        #define IP_OFFMASK 0x1fff       /* mask for fragmenting bits */
-        u_char  ip_ttl;                 /* time to live */
-        u_char  ip_p;                   /* protocol */
-        u_short ip_sum;                 /* checksum */
-        struct  in_addr ip_src,ip_dst;  /* source and dest address */
-};
-#define IP_HL(ip)               (((ip)->ip_vhl) & 0x0f)
-#define IP_V(ip)                (((ip)->ip_vhl) >> 4)
+struct sockaddr_in source,dest;
 
-/* TCP header */
-typedef u_int tcp_seq;
-
-struct sniff_tcp {
-        u_short th_sport;               /* source port */
-        u_short th_dport;               /* destination port */
-        tcp_seq th_seq;                 /* sequence number */
-        tcp_seq th_ack;                 /* acknowledgement number */
-        u_char  th_offx2;               /* data offset, rsvd */
-#define TH_OFF(th)      (((th)->th_offx2 & 0xf0) >> 4)
-        u_char  th_flags;
-        #define TH_FIN  0x01
-        #define TH_SYN  0x02
-        #define TH_RST  0x04
-        #define TH_PUSH 0x08
-        #define TH_ACK  0x10
-        #define TH_URG  0x20
-        #define TH_ECE  0x40
-        #define TH_CWR  0x80
-        #define TH_FLAGS        (TH_FIN|TH_SYN|TH_RST|TH_ACK|TH_URG|TH_ECE|TH_CWR)
-        u_short th_win;                 /* window */
-        u_short th_sum;                 /* checksum */
-        u_short th_urp;                 /* urgent pointer */
-};
-
-// find and save readable part of payload
-char* find_printable_payload(const u_char *payload, int len) {
+// find and save prinatble part of payload
+char* find_printable_payload(const u_char *payload, int len){
 
 	const u_char *ch = payload;
 	char printable[10000] = "";
@@ -62,10 +27,16 @@ char* find_printable_payload(const u_char *payload, int len) {
 	
 	// find printable character and save them into a new string.
 	for(int i = 0; i < len; i++) {
+
 		if (isprint(*ch)){
 			printable[j] = *ch;
 			j++;
-		}
+
+		} else if ((*ch) == '\n' || (*ch) == ' '){
+            printable[j] = *ch;
+			j++;
+        }
+
 		ch++;
 	}
 	
@@ -73,102 +44,113 @@ char* find_printable_payload(const u_char *payload, int len) {
 	return tmp;
 }
 
-// print headers of IP protocol
-void print_ip_header(const struct sniff_ip *ip){
+// print useful data of ip header
+void print_ip_header(const u_char * Buffer, int Size) {
 
-	//printf("     Length: %d bytes\n", ntohs(ip->ip_len));
-    syslog(LOG_INFO, "     Length: %d bytes\n", ntohs(ip->ip_len));
-
-	// print source and destination IP addresses
-	//printf("       From: %s\n", inet_ntoa(ip->ip_src));
-	syslog(LOG_INFO, "       From: %s\n", inet_ntoa(ip->ip_src));
-
-	//printf("         To: %s\n", inet_ntoa(ip->ip_dst));
-	syslog(LOG_INFO, "         To: %s\n", inet_ntoa(ip->ip_dst));
-
+	unsigned short iphdrlen;
+		
+	struct iphdr *iph = (struct iphdr *)(Buffer  + sizeof(struct ethhdr) );
+	iphdrlen =iph->ihl*4;
+	
+	// get source IP address
+    memset(&source, 0, sizeof(source));
+	source.sin_addr.s_addr = iph->saddr;
+	
+    // get destination IP address
+	memset(&dest, 0, sizeof(dest));
+	dest.sin_addr.s_addr = iph->daddr;
+	
+    syslog(LOG_INFO, "Packet size: %d bytes\n", ntohs(iph->tot_len));
+	syslog(LOG_INFO, "     Src IP: %s\n", inet_ntoa(source.sin_addr));
+	syslog(LOG_INFO, "     Dst IP: %s\n",  inet_ntoa(dest.sin_addr));
 }
 
-// print headers of TCP protocol
-void print_tcp_header(const struct sniff_tcp *tcp, int size_payload){
+// print useful data of tcp header
+void print_tcp_packet(const u_char * Buffer, int Size, struct tcphdr *tcph) {
 
-	//printf("   Src port: %d\n", ntohs(tcp->th_sport));
-	syslog(LOG_INFO, "   Src port: %d\n", ntohs(tcp->th_sport));
-
-	//printf("   Dst port: %d\n", ntohs(tcp->th_dport));
-	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(tcp->th_dport));
-
-	//printf("    Payload: %d bytes\n", size_payload);
-	syslog(LOG_INFO, "    Payload: %d bytes\n", size_payload);
+	syslog(LOG_INFO, "   Protocol: TCP - HTTP\n");
 	
+	print_ip_header(Buffer,Size);
+	
+    syslog(LOG_INFO, "   Src port: %d\n", ntohs(tcph->source));
+	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(tcph->dest));
+}
+
+// print useful data of udp header
+void print_udp_packet(const u_char *Buffer , int Size, struct udphdr *udph){
+
+	syslog(LOG_INFO, "   Protocol: UDP\n");
+	
+	print_ip_header(Buffer,Size);
+	
+    syslog(LOG_INFO, "   Src port: %d\n", ntohs(udph->source));
+	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(udph->dest));
+	
+}
+
+// separate useful part of tcp packet
+void Processing_tcp_packet(const u_char * Buffer, int Size) {
+    
+    unsigned short iphdrlen;
+	
+	struct iphdr *iph = (struct iphdr *)( Buffer  + sizeof(struct ethhdr) );
+	iphdrlen = iph->ihl*4;
+	
+	struct tcphdr *tcph=(struct tcphdr*)(Buffer + iphdrlen + sizeof(struct ethhdr));
+			
+	int header_size =  sizeof(struct ethhdr) + iphdrlen + tcph->doff*4;
+
+    // get printable part of payload
+    char *printable_payload = find_printable_payload(Buffer + header_size, Size - header_size);
+
+    // check if payload contains word "HTTP" or not
+	if (strstr(printable_payload, "HTTP") != NULL){
+
+        print_tcp_packet(Buffer, Size, tcph);
+	    syslog(LOG_INFO, "    payload: %s", printable_payload);
+    }
+}
+
+// separate useful part of udp packet
+void Processing_udp_packet(const u_char * Buffer, int Size){
+
+	unsigned short iphdrlen;
+	
+	struct iphdr *iph = (struct iphdr *)(Buffer +  sizeof(struct ethhdr));
+	iphdrlen = iph->ihl*4;
+	
+	struct udphdr *udph = (struct udphdr*)(Buffer + iphdrlen  + sizeof(struct ethhdr));
+	
+	int header_size =  sizeof(struct ethhdr) + iphdrlen + sizeof udph;
+
+    print_udp_packet(Buffer , Size, udph);
+    
+    // get printable part of payload
+    char *printable_payload = find_printable_payload(Buffer + header_size, Size - header_size);
+	syslog(LOG_INFO, "    payload: %s", printable_payload);
 }
 
 // the major part of the program that gets a packet and extract important data of it
-void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body) {
-    
-	// declare pointers to packet headers
-	const struct sniff_ip *ip;              // The IP header
-	const struct sniff_tcp *tcp;            // The TCP header
-	const char *payload;                    // Packet payload
-
-	int size_ip;
-	int size_tcp;
-	int size_payload;
-
-	// define/compute ip header offset
-	ip = (struct sniff_ip*)(packet_body + SIZE_ETHERNET);
-	size_ip = IP_HL(ip)*4;
-	if (size_ip < 20) {
-		//printf("   * Invalid IP header length: %u bytes\n", size_ip);
-    	syslog(LOG_ERR, " * Invalid IP header length: %u bytes\n", size_ip);
-		return;
-	}
-
-	// define/compute tcp header offset //
-	tcp = (struct sniff_tcp*)(packet_body + SIZE_ETHERNET + size_ip);
-	size_tcp = TH_OFF(tcp)*4;
-	if (size_tcp < 20) {
-		//printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
-    	syslog(LOG_ERR, "   * Invalid TCP header length: %u bytes\n", size_tcp);
-		return;
-	}
-
-	// define/compute tcp payload (segment) offset //
-	payload = (u_char *)(packet_body + SIZE_ETHERNET + size_ip + size_tcp);
+void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body)
+{
+	int size = packet_header->len;
 	
-	// compute tcp payload (segment) size //
-	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
-	
-	// extract and save payload
-	if (size_payload > 0){
+	//Get the IP Header part of this packet , excluding the ethernet header
+	struct iphdr *iph = (struct iphdr*)(packet_body + sizeof(struct ethhdr));
+
+	switch (iph->protocol) //Check the Protocol and do accordingly...
+	{
+		case 6:  //TCP Protocol
+			Processing_tcp_packet(packet_body , size);
+			break;
 		
-		char *printable_payload = find_printable_payload(payload, size_payload);
-
-		// find just http packet
-		if (strstr(printable_payload, "HTTP") != NULL){
-
-			static int count = 1; // packet counter
-			printf("\nPacket %d logged\n", count);
-			syslog(LOG_INFO, "Packet %d:", count);
-			count++;
-
-			// determine protocol
-			switch(ip->ip_p) {
-				case IPPROTO_TCP:
-					syslog(LOG_INFO, "   Protocol: TCP\n");
-					break;
-
-				default:
-					printf("   Protocol: unknown\n");
-					return;
-			}
-
-			print_ip_header(ip);
-			print_tcp_header(tcp, size_payload);
-			syslog(LOG_INFO, "    payload: %s", printable_payload);
-
-		}
+		case 17: //UDP Protocol
+			Processing_udp_packet(packet_body , size);
+			break;
+		
+		default: //Other Protocol
+			return;
 	}
-    return;
 }
 
 // show all available device and choose one of them to sniff
@@ -211,13 +193,15 @@ char* select_device(){
 
  }
 
+// the main function
 int main() {
+
     char *device; // device to sniff on
     pcap_t *handle; // session handle
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
 	// filter expression (second part of the following expression means to filter packet with body)
-    //char filter_exp[] = "tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)"; 
-    char filter_exp[] = "tcp port 8765 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
+    //char filter_exp[] = "tcp port 8765 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
+    char filter_exp[] = "udp port 53 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
 	struct bpf_program filter; // compiled filter
     bpf_u_int32 subnet_mask, ip;
 	struct pcap_pkthdr header; //header that pcap gives us
