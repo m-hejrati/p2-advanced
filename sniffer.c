@@ -106,8 +106,10 @@ void Processing_tcp_packet(const u_char * Buffer, int Size) {
     // check if payload contains word "HTTP" or not
 	if (strstr(printable_payload, "HTTP") != NULL){
 
+	syslog(LOG_INFO, " ");
         print_tcp_packet(Buffer, Size, tcph);
 	    syslog(LOG_INFO, "    payload: %s", printable_payload);
+	printf("TCP packet logged\n");
     }
 }
 
@@ -123,11 +125,14 @@ void Processing_udp_packet(const u_char * Buffer, int Size){
 	
 	int header_size =  sizeof(struct ethhdr) + iphdrlen + sizeof udph;
 
+	syslog(LOG_INFO, " ");
     print_udp_packet(Buffer , Size, udph);
     
     // get printable part of payload
     char *printable_payload = find_printable_payload(Buffer + header_size, Size - header_size);
 	syslog(LOG_INFO, "    payload: %s", printable_payload);
+
+	printf("UDP packet logged\n");
 }
 
 // the major part of the program that gets a packet and extract important data of it
@@ -201,7 +206,7 @@ int main() {
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
 	// filter expression (second part of the following expression means to filter packet with body)
     //char filter_exp[] = "tcp port 8765 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
-    char filter_exp[] = "udp port 53 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
+    char filter_exp[] = "((tcp port 8765) or (udp port 53))and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
 	struct bpf_program filter; // compiled filter
     bpf_u_int32 subnet_mask, ip;
 	struct pcap_pkthdr header; //header that pcap gives us

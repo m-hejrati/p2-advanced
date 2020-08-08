@@ -33,5 +33,6 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(response.getvalue())
 
 
-httpd = HTTPServer(('localhost', 8765), SimpleHTTPRequestHandler)
+httpd = HTTPServer(('127.0.0.52', 8765), SimpleHTTPRequestHandler)
+print("waiting...")
 httpd.serve_forever()
