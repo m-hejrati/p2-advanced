@@ -60,7 +60,7 @@ void print_ip_header(const u_char * Buffer, int Size) {
 	memset(&dest, 0, sizeof(dest));
 	dest.sin_addr.s_addr = iph->daddr;
 	
-    syslog(LOG_INFO, "Packet size: %d bytes\n", ntohs(iph->tot_len));
+    syslog(LOG_INFO, "Packet size: %d bytes\n", Size);
 	syslog(LOG_INFO, "     Src IP: %s\n", inet_ntoa(source.sin_addr));
 	syslog(LOG_INFO, "     Dst IP: %s\n",  inet_ntoa(dest.sin_addr));
 }
