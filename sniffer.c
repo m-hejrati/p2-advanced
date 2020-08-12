@@ -16,6 +16,12 @@
 #include<netinet/tcp.h>	//Provides declarations for tcp header
 #include<netinet/ip.h>	//Provides declarations for ip header
 
+struct IP {
+
+	char src [16];
+	char dst [16];
+};
+
 int packet_number = 0;
 
 struct session_info {
@@ -60,15 +66,15 @@ char* find_printable_payload(const u_char *payload, int len){
 }
 
 // print useful data of ip header
-void print_ip_header(int Size, struct sockaddr_in source, struct sockaddr_in dest) {
+void print_ip_header(int Size, struct IP ip) {
 	
     syslog(LOG_INFO, "Packet size: %d bytes\n", Size);
-	syslog(LOG_INFO, "     Src IP: %s\n", inet_ntoa(source.sin_addr));
-	syslog(LOG_INFO, "     Dst IP: %s\n",  inet_ntoa(dest.sin_addr));
+	syslog(LOG_INFO, "     Src IP: %s\n", ip.src);
+	syslog(LOG_INFO, "     Dst IP: %s\n", ip.dst);
 }
 
 // separate useful part of ip header
-void Processing_ip_header(const u_char * Buffer, int Size) {
+struct IP Processing_ip_header(const u_char * Buffer, int Size) {
 
 	struct sockaddr_in source,dest;
 	unsigned short iphdrlen;
@@ -84,27 +90,22 @@ void Processing_ip_header(const u_char * Buffer, int Size) {
 	memset(&dest, 0, sizeof(dest));
 	dest.sin_addr.s_addr = iph->daddr;
 
-	print_ip_header(Size, source, dest);
+    struct IP ip;
+	strcpy(ip.src, inet_ntoa(source.sin_addr));  
+	strcpy(ip.dst, inet_ntoa(dest.sin_addr));
 
+	return ip;
 }
 
 // print useful data of tcp header
-void print_tcp_packet(const u_char * Buffer, int Size, struct tcphdr *tcph) {
+void print_tcp_header(const u_char * Buffer, int Size, struct tcphdr *tcph) {
 
-	syslog(LOG_INFO, "   Protocol: TCP\n");
-	
-	Processing_ip_header(Buffer,Size);
-	
     syslog(LOG_INFO, "   Src port: %d\n", ntohs(tcph->source));
 	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(tcph->dest));
 }
 
 // print useful data of udp header
-void print_udp_packet(const u_char *Buffer , int Size, struct udphdr *udph){
-
-	syslog(LOG_INFO, "   Protocol: UDP\n");
-	
-	Processing_ip_header(Buffer,Size);
+void print_udp_header(const u_char *Buffer , int Size, struct udphdr *udph){
 	
     syslog(LOG_INFO, "   Src port: %d\n", ntohs(udph->source));
 	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(udph->dest));
@@ -123,14 +124,21 @@ void Processing_tcp_packet(const u_char * Buffer, int Size) {
 			
 	int header_size =  sizeof(struct ethhdr) + iphdrlen + tcph->doff*4;
 
+
     // get printable part of payload
     char *printable_payload = find_printable_payload(Buffer + header_size, Size - header_size);
+
+	// get ip from function
+	struct IP ip = Processing_ip_header(Buffer, Size);
 
 	syslog(LOG_INFO, " ");
 	packet_number ++;
 	syslog(LOG_INFO, "     number: %d", packet_number);
+	syslog(LOG_INFO, "   Protocol: TCP\n");
+	
+	print_ip_header(Size, ip);
+    print_tcp_header(Buffer, Size, tcph);
 
-    print_tcp_packet(Buffer, Size, tcph);
 	syslog(LOG_INFO, "    payload: %s", printable_payload);
 	
 	printf("%d) TCP packet logged\n", packet_number);
@@ -151,11 +159,16 @@ void Processing_udp_packet(const u_char * Buffer, int Size){
 	// get printable part of payload
 	char *printable_payload = find_printable_payload(Buffer + header_size, Size - header_size);
 
+	// get ip from function
+	struct IP ip = Processing_ip_header(Buffer, Size);
+
 	syslog(LOG_INFO, " ");
 	packet_number ++;
 	syslog(LOG_INFO, "     number: %d", packet_number);
-
-	print_udp_packet(Buffer , Size, udph);
+	syslog(LOG_INFO, "   Protocol: UDP\n");
+	
+	print_ip_header(Size, ip);
+	print_udp_header(Buffer , Size, udph);
 	syslog(LOG_INFO, "    payload: %s", printable_payload);
 
 	printf("%d) UDP packet logged\n", packet_number);
