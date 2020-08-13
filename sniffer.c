@@ -39,6 +39,46 @@ struct session_info {
 struct session_info session[100];
 int z = 0;
 
+void save_session(char type[], struct IP ip, int src_port, int dst_port, int Size){
+
+	int flag = 1;
+
+	for (int i = 0; i < z; i++){
+		
+		if (strcmp(session[i].type, type) == 0)
+
+			if ( (strcmp(session[i].src_IP, ip.src) == 0) && (strcmp(session[i].dst_IP, ip.dst) == 0) && (session[i].scr_port == src_port) && (session[i].dst_port == dst_port) ){
+				
+				session[i].num_req ++;
+				session[i].len += Size;
+				flag = 0;
+				break;
+
+			} else if ( (strcmp(session[i].src_IP, ip.dst) == 0) && (strcmp(session[i].dst_IP, ip.src) == 0) && (session[i].scr_port == dst_port) && (session[i].dst_port == src_port) ){
+
+				session[i].num_rsp ++;
+				session[i].len += Size;
+				flag = 0;
+				break;
+
+			}
+	}
+
+	if (flag){
+		
+		session[z].No = z+1;
+		strcpy(session[z].type, type);
+		strcpy(session[z].src_IP, ip.src);
+		strcpy(session[z].dst_IP, ip.dst);
+		session[z].scr_port = src_port;
+		session[z].dst_port = dst_port;
+		session[z].num_req ++;
+		session[z].len = Size;
+		z++;
+	}
+
+}
+
 // find and save prinatble part of payload
 char* find_printable_payload(const u_char *payload, int len){
 
@@ -142,6 +182,8 @@ void Processing_tcp_packet(const u_char * Buffer, int Size) {
 	syslog(LOG_INFO, "    payload: %s", printable_payload);
 	
 	printf("%d) TCP packet logged\n", packet_number);
+
+	save_session("tcp", ip, ntohs(tcph->source), ntohs(tcph->dest), Size);
 }
 
 // separate useful part of udp packet
@@ -172,6 +214,8 @@ void Processing_udp_packet(const u_char * Buffer, int Size){
 	syslog(LOG_INFO, "    payload: %s", printable_payload);
 
 	printf("%d) UDP packet logged\n", packet_number);
+
+	save_session("udp", ip, ntohs(udph->source), ntohs(udph->dest), Size);
 }
 
 // the major part of the program that gets a packet and extract important data of it
@@ -294,6 +338,12 @@ int main() {
 	// cleanup 
 	pcap_freecode(&filter);
 	pcap_close(handle);
+
+	for(int i = 0; i < z; i++){
+		syslog(LOG_DEBUG, "%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
+
+		// printf("%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
+	}
 
     closelog();
     return 0;
