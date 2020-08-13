@@ -16,6 +16,9 @@
 #include<netinet/tcp.h>	//Provides declarations for tcp header
 #include<netinet/ip.h>	//Provides declarations for ip header
 
+#include<signal.h>
+#include<unistd.h>
+
 struct IP {
 
 	char src [16];
@@ -36,7 +39,7 @@ struct session_info {
 	long len;
 };
 
-struct session_info session[100];
+struct session_info session[500];
 int z = 0;
 
 void save_session(char type[], struct IP ip, int src_port, int dst_port, int Size){
@@ -221,6 +224,7 @@ void Processing_udp_packet(const u_char * Buffer, int Size){
 // the major part of the program that gets a packet and extract important data of it
 void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body)
 {
+
 	int size = packet_header->len;
 	
 	//Get the IP Header part of this packet , excluding the ethernet header
@@ -281,17 +285,36 @@ char* select_device(){
 
  }
 
+// define handle global, to use it in sig_handler function
+pcap_t *handle;
+
+void sig_handler(int signum){
+
+	pcap_breakloop(handle);
+
+	printf("%d session recorded in last 10 second \n", z+1);
+
+	for(int i = 0; i < z; i++){
+
+		syslog(LOG_DEBUG, "%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
+
+		//printf("%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
+	}
+	
+	z = 0;
+}
+
 // the main function
 int main() {
 
     char *device; // device to sniff on
-    pcap_t *handle; // session handle
+    //pcap_t *handle; // session handle
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
 	// filter expression (second part of the following expression means to filter packet with body)
     //char filter_exp[] = "((tcp port 8765) or (udp port 53))and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
 	char filter_exp[] = "";
 	struct bpf_program filter; // compiled filter
-    bpf_u_int32 subnet_mask, ip;
+    	bpf_u_int32 subnet_mask, ip;
 	struct pcap_pkthdr header; //header that pcap gives us
 	const u_char *packet; // actual packet
 	int num_packets; // number of packets to capture 
@@ -330,20 +353,22 @@ int main() {
 	printf("\nStart sniffing...\n");
 	printf("Device: %s\n", device);
 	printf("Number of packets: %d\n\n", num_packets);
-    syslog(LOG_INFO, "Start sniffing on device: %s and %d packets", device, num_packets);
+    	syslog(LOG_INFO, "Start sniffing on device: %s and %d packets", device, num_packets);
 
-    // start sniffing
-	pcap_loop(handle, num_packets, packet_handler, NULL);
+	while (1) {
+			
+		signal(SIGALRM, sig_handler);
+		alarm(10);
+
+		// start sniffing
+		pcap_loop(handle, num_packets, packet_handler, NULL);
+
+	}
 
 	// cleanup 
 	pcap_freecode(&filter);
 	pcap_close(handle);
 
-	for(int i = 0; i < z; i++){
-		syslog(LOG_DEBUG, "%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
-
-		// printf("%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
-	}
 
     closelog();
     return 0;
