@@ -37,12 +37,13 @@ struct session_info {
 	int num_req;
 	int num_rsp;
 	long len;
+	int status;
 };
 
 struct session_info session[500];
 int z = 0;
 
-void save_session(char type[], struct IP ip, int src_port, int dst_port, int Size){
+void save_session(char type[], struct IP ip, int src_port, int dst_port, int Size, int fin){
 
 	int flag = 1;
 
@@ -55,6 +56,7 @@ void save_session(char type[], struct IP ip, int src_port, int dst_port, int Siz
 				session[i].num_req ++;
 				session[i].len += Size;
 				flag = 0;
+				session[i].status = fin;
 				break;
 
 			} else if ( (strcmp(session[i].src_IP, ip.dst) == 0) && (strcmp(session[i].dst_IP, ip.src) == 0) && (session[i].scr_port == dst_port) && (session[i].dst_port == src_port) ){
@@ -62,6 +64,7 @@ void save_session(char type[], struct IP ip, int src_port, int dst_port, int Siz
 				session[i].num_rsp ++;
 				session[i].len += Size;
 				flag = 0;
+				session[i].status = fin;
 				break;
 
 			}
@@ -75,8 +78,10 @@ void save_session(char type[], struct IP ip, int src_port, int dst_port, int Siz
 		strcpy(session[z].dst_IP, ip.dst);
 		session[z].scr_port = src_port;
 		session[z].dst_port = dst_port;
-		session[z].num_req ++;
+		session[z].num_req = 1;
+		session[z].num_rsp = 0;
 		session[z].len = Size;
+		session[z].status = fin;
 		z++;
 	}
 
@@ -186,7 +191,7 @@ void Processing_tcp_packet(const u_char * Buffer, int Size) {
 	
 	printf("%d) TCP packet logged\n", packet_number);
 
-	save_session("tcp", ip, ntohs(tcph->source), ntohs(tcph->dest), Size);
+	save_session("tcp", ip, ntohs(tcph->source), ntohs(tcph->dest), Size, (int)tcph->fin);
 }
 
 // separate useful part of udp packet
@@ -218,7 +223,7 @@ void Processing_udp_packet(const u_char * Buffer, int Size){
 
 	printf("%d) UDP packet logged\n", packet_number);
 
-	save_session("udp", ip, ntohs(udph->source), ntohs(udph->dest), Size);
+	save_session("udp", ip, ntohs(udph->source), ntohs(udph->dest), Size, 0);
 }
 
 // the major part of the program that gets a packet and extract important data of it
@@ -288,20 +293,44 @@ char* select_device(){
 // define handle global, to use it in sig_handler function
 pcap_t *handle;
 
+// run this function after 30 second of capturing
 void sig_handler(int signum){
 
 	pcap_breakloop(handle);
 
-	printf("%d session recorded in last 10 second \n", z+1);
+	if (z != 0){
 
-	for(int i = 0; i < z; i++){
+		printf("%d packet in %d session recorded in last 30 seconds \n", packet_number, z);
+		syslog(LOG_INFO, " ");
+		syslog(LOG_INFO, "%d session recorded in last 30 seconds \n", z);
 
-		syslog(LOG_DEBUG, "%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
+		for(int i = 0; i < z; i++){
 
-		//printf("%d) | type: %s | IP s: %s | IP d: %s | P s: %ld | P d: %ld | req: %d | rsp: %d \n", i+1, session[i].type, session[i].src_IP, session[i].dst_IP, session[i].scr_port, session[i].dst_port, session[i].num_req, session[i].num_rsp);
-	}
+			syslog(LOG_INFO, " ");
+			syslog(LOG_INFO, "Session No: %d", i+1);
+			syslog(LOG_INFO, "  Protocol: %s", session[i].type);
+			syslog(LOG_INFO, "    Src IP: %s", session[i].src_IP);
+			syslog(LOG_INFO, "    Dst IP: %s", session[i].dst_IP);
+			syslog(LOG_INFO, "  Src port: %ld", session[i].scr_port);
+			syslog(LOG_INFO, "  Dst port: %ld", session[i].dst_port);
+			syslog(LOG_INFO, "      Sent: %d", session[i].num_req);
+			syslog(LOG_INFO, "  Received: %d", session[i].num_rsp);
+			syslog(LOG_INFO, "Total Size: %ld", session[i].len);
+			if (strcmp(session[i].type, "tcp") == 0)
+				if(session[i].status)
+					syslog(LOG_INFO, "    Status: close");
+				else 
+					syslog(LOG_INFO, "    Status: open");
+		}
 	
-	z = 0;
+		z = 0;
+		packet_number = 0;		
+
+	}else{
+		syslog(LOG_INFO, " ");
+		syslog(LOG_INFO, "No packet captured in last 30 seconds \n");
+		printf("No packet captured in last 30 seconds \n");	
+	}
 }
 
 // the main function
@@ -358,7 +387,7 @@ int main() {
 	while (1) {
 			
 		signal(SIGALRM, sig_handler);
-		alarm(10);
+		alarm(30);
 
 		// start sniffing
 		pcap_loop(handle, num_packets, packet_handler, NULL);
