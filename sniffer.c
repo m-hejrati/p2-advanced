@@ -19,6 +19,12 @@
 #include<signal.h>
 #include<unistd.h>
 
+struct device {
+	
+	char name [20];
+	char ip [16];
+};
+
 struct IP {
 
 	char src [16];
@@ -42,6 +48,7 @@ struct session_info {
 
 struct session_info session[500];
 int z = 0;
+
 
 void save_session(char type[], struct IP ip, int src_port, int dst_port, int Size, int fin){
 
@@ -251,10 +258,11 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *packet_header, const
 }
 
 // show all available device and choose one of them to sniff
-char* select_device(){
+struct device select_device(){
 
     pcap_if_t *alldevsp , *device;
-    char devs[100][100];
+    //char devs[100][100];
+	struct device devices [20];
 	char *errbuf;
 	int count = 1;
 	int n;
@@ -276,7 +284,15 @@ char* select_device(){
         printf("%d. %s - %s\n" , count , device->name , device->description);
         if(device->name != NULL)
         {
-            strcpy(devs[count] , device->name);
+			// save device name
+            strcpy(devices[count].name , device->name);
+
+			// save device ip
+			for(pcap_addr_t *a=device->addresses; a!=NULL; a=a->next) {
+            	if(a->addr->sa_family == AF_INET) 
+            		strcpy(devices[count].ip , inet_ntoa(((struct sockaddr_in*)a->addr)->sin_addr));
+        	}
+
         }
         count++;
     }
@@ -285,8 +301,12 @@ char* select_device(){
     printf("\nEnter the number of device you want to sniff : ");
     scanf("%d" , &n);
 
-	char* dev = devs[n];
-    return dev;
+	// copy and return selected device
+	struct device selected_device;
+	strcpy(selected_device.name, devices[n].name);
+	strcpy(selected_device.ip, devices[n].ip);
+
+    return selected_device;
 
  }
 
@@ -336,14 +356,17 @@ void sig_handler(int signum){
 // the main function
 int main() {
 
-    char *device; // device to sniff on
+    struct device device; // device to sniff on
     //pcap_t *handle; // session handle
     char error_buffer[PCAP_ERRBUF_SIZE]; // error string
 	// filter expression (second part of the following expression means to filter packet with body)
     //char filter_exp[] = "((tcp port 8765) or (udp port 53))and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)";
 	char filter_exp[] = "";
 	struct bpf_program filter; // compiled filter
-    	bpf_u_int32 subnet_mask, ip;
+    bpf_u_int32 raw_mask; // subnet mask
+	bpf_u_int32 ip; // ip
+    struct in_addr addr;
+	char *mask; // dot notation of the network mask
 	struct pcap_pkthdr header; //header that pcap gives us
 	const u_char *packet; // actual packet
 	int num_packets; // number of packets to capture 
@@ -354,16 +377,33 @@ int main() {
 	// select device
 	device = select_device();
 
+	// ask pcap for the network address and mask of the device
+    if( pcap_lookupnet(device.name, &ip, &raw_mask, error_buffer) == -1){
+
+        printf("Couldn't read device %s information - %s\n", device.name, error_buffer);
+		syslog(LOG_ERR, "Couldn't read device %s information - %s\n", device.name, error_buffer);
+    }
+	
+	// get the subnet mask in a human readable form
+    addr.s_addr = raw_mask;
+    mask = inet_ntoa(addr);
+
+	// print device information
+	printf("\nDevice info\n");
+	printf("Name: %s\n", device.name);
+	printf("IP: %s\n", device.ip);
+	printf("MASK: %s\n",mask);
+	
     printf("\nEnter number of packets you want to capture: ");
     scanf("%d" , &num_packets);
     
 	// open device in promiscuous mode
-    handle = pcap_open_live(device, BUFSIZ, 1, 0, error_buffer);
+    handle = pcap_open_live(device.name, BUFSIZ, 1, 0, error_buffer);
     if (handle == NULL) {
-        printf("Couldn't open device %s - %s\n", device, error_buffer);
-		syslog(LOG_ERR, "Couldn't open device %s - %s\n", device, error_buffer);
+        printf("Couldn't open device %s - %s\n", device.name, error_buffer);
+		syslog(LOG_ERR, "Couldn't open device %s - %s\n", device.name, error_buffer);
         return 1;
-    }
+	}
 
 	// compile the filter expression
     if (pcap_compile(handle, &filter, filter_exp, 0, ip) == -1) {
@@ -379,10 +419,9 @@ int main() {
     }
 
 	// print capture info
-	printf("\nStart sniffing...\n");
-	printf("Device: %s\n", device);
+	printf("\nStart sniffing...\n\n");
 	printf("Number of packets: %d\n\n", num_packets);
-    	syslog(LOG_INFO, "Start sniffing on device: %s and %d packets", device, num_packets);
+    syslog(LOG_INFO, "Start sniffing on device: %s and %d packets", device.name, num_packets);
 
 	while (1) {
 			
