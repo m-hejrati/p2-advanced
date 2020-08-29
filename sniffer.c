@@ -310,6 +310,31 @@ struct device select_device(){
 
  }
 
+// detect address class
+char addres_class_detection(char ip_reference [20]){
+
+	// copy ip to a variable. not to change the ip
+	char ip [20];
+	strcpy(ip, ip_reference);
+
+	// get first part of ip
+	char * class_pointer = strtok(ip, ".");
+
+	// convert to integer
+	int class = atoi(class_pointer);
+
+	if (1 <= class && class <= 127)
+		 return 'A';
+	else if (128 <= class && class <= 191)
+		 return 'B';
+	else if (192 <= class && class <= 223)
+		 return 'C';
+	else if (224 <= class && class <= 239)
+		 return 'D';		 
+	else if (240 <= class && class <= 247)
+		 return 'E';	 
+ }
+
 // define handle global, to use it in sig_handler function
 pcap_t *handle;
 
@@ -367,9 +392,11 @@ int main() {
 	bpf_u_int32 ip; // ip
     struct in_addr addr;
 	char *mask; // dot notation of the network mask
+	char addres_class; // ip address class between A, B, C, ...
 	struct pcap_pkthdr header; //header that pcap gives us
 	const u_char *packet; // actual packet
 	int num_packets; // number of packets to capture 
+	
 
 	// open logging machine
 	openlog("p2-advanced | sniffer", LOG_PID, LOG_USER);
@@ -388,11 +415,14 @@ int main() {
     addr.s_addr = raw_mask;
     mask = inet_ntoa(addr);
 
+	addres_class = addres_class_detection (device.ip);
+
 	// print device information
 	printf("\nDevice info\n");
 	printf("Name: %s\n", device.name);
 	printf("IP: %s\n", device.ip);
-	printf("MASK: %s\n",mask);
+	printf("Mask: %s\n" , mask);
+	printf("Class: %c\n", addres_class);
 	
     printf("\nEnter number of packets you want to capture: ");
     scanf("%d" , &num_packets);
