@@ -49,7 +49,142 @@ struct session_info {
 struct session_info session[500];
 int z = 0;
 
+struct packet_protocol {
 
+	int FTP_DATA;
+	int FTP;
+	int SSH;
+	int TELNET;
+	int SMTP;
+	int DNS;
+	int TFTP;
+	int HTTP;
+	int POP3;
+	int NNTP;
+	int NTP;
+	int IMAP4;
+	int HTTPS;
+	int Others;
+
+};
+
+struct packet_protocol protocols;
+
+// set number of different protocol to zero
+void reset_protocols (){
+
+	protocols.FTP_DATA = 0;
+	protocols.FTP = 0;
+	protocols.SSH = 0;
+	protocols.TELNET = 0;
+	protocols.SMTP = 0;
+	protocols.DNS = 0;
+	protocols.TFTP = 0;
+	protocols.HTTP = 0;
+	protocols.POP3 = 0;
+	protocols.NNTP = 0;
+	protocols.NTP = 0;
+	protocols.IMAP4 = 0;
+	protocols.HTTPS = 0;
+	protocols.Others = 0;
+
+}
+
+// add protocol of captured packet to list
+void save_protocol(int src_port, int dst_port){
+
+	switch (src_port) {
+		case 20:
+			protocols.FTP_DATA ++;
+			return;
+		case 21:
+			protocols.FTP ++;
+			return;
+		case 22:
+			protocols.SSH ++;
+			return;
+		case 23:
+			protocols.TELNET ++;
+			return;
+		case 25:
+			protocols.SMTP ++;
+			return;
+		case 53:
+			protocols.DNS ++;
+			return;
+		case 69:
+			protocols.TFTP ++;
+			return;
+		case 80:
+			protocols.HTTP ++;
+			return;
+		case 110:
+			protocols.POP3 ++;
+			return;
+		case 119:
+			protocols.NNTP ++;
+			return;
+		case 123:
+			protocols.NTP ++;
+			return;
+		case 143:
+			protocols.IMAP4 ++;
+			return;
+		case 443:
+			protocols.HTTPS ++;
+			return;
+		default:
+			// pass			
+			break;
+	}
+	
+	switch (dst_port) {
+		case 20:
+			protocols.FTP_DATA ++;
+			return;
+		case 21:
+			protocols.FTP ++;
+			return;
+		case 22:
+			protocols.SSH ++;
+			return;
+		case 23:
+			protocols.TELNET ++;
+			return;
+		case 25:
+			protocols.SMTP ++;
+			return;
+		case 53:
+			protocols.DNS ++;
+			return;
+		case 69:
+			protocols.TFTP ++;
+			return;
+		case 80:
+			protocols.HTTP ++;
+			return;
+		case 110:
+			protocols.POP3 ++;
+			return;
+		case 119:
+			protocols.NNTP ++;
+			return;
+		case 123:
+			protocols.NTP ++;
+			return;
+		case 143:
+			protocols.IMAP4 ++;
+			return;
+		case 443:
+			protocols.HTTPS ++;
+			return;
+		default:
+			protocols.Others ++;			
+			return;
+	}
+}
+
+// save session information
 void save_session(char type[], struct IP ip, int src_port, int dst_port, int Size, int fin){
 
 	int flag = 1;
@@ -199,6 +334,7 @@ void Processing_tcp_packet(const u_char * Buffer, int Size) {
 	printf("%d) TCP packet logged\n", packet_number);
 
 	save_session("tcp", ip, ntohs(tcph->source), ntohs(tcph->dest), Size, (int)tcph->fin);
+	save_protocol(ntohs(tcph->source), ntohs(tcph->dest));
 }
 
 // separate useful part of udp packet
@@ -231,6 +367,8 @@ void Processing_udp_packet(const u_char * Buffer, int Size){
 	printf("%d) UDP packet logged\n", packet_number);
 
 	save_session("udp", ip, ntohs(udph->source), ntohs(udph->dest), Size, 0);
+	save_protocol(ntohs(udph->source), ntohs(udph->dest));
+
 }
 
 // the major part of the program that gets a packet and extract important data of it
@@ -376,6 +514,27 @@ void sig_handler(int signum){
 		syslog(LOG_INFO, "No packet captured in last 30 seconds \n");
 		printf("No packet captured in last 30 seconds \n");	
 	}
+
+	syslog(LOG_DEBUG, "\n");
+	syslog(LOG_DEBUG, "Number of packets from each type of protocol:\n");
+	
+	syslog(LOG_DEBUG, "  FTP_DATA: %d\n", protocols.FTP_DATA);
+	syslog(LOG_DEBUG, "       FTP: %d\n", protocols.FTP);
+	syslog(LOG_DEBUG, "       SSH: %d\n", protocols.SSH);
+	syslog(LOG_DEBUG, "    TELNET: %d\n", protocols.TELNET);
+	syslog(LOG_DEBUG, "      SMTP: %d\n", protocols.SMTP);
+	syslog(LOG_DEBUG, "       DNS: %d\n", protocols.DNS);
+	syslog(LOG_DEBUG, "      TFTP: %d\n", protocols.TFTP);
+	syslog(LOG_DEBUG, "      HTTP: %d\n", protocols.HTTP);
+	syslog(LOG_DEBUG, "      POP3: %d\n", protocols.POP3);
+	syslog(LOG_DEBUG, "      NNTP: %d\n", protocols.NNTP);
+	syslog(LOG_DEBUG, "       NTP: %d\n", protocols.NTP);
+	syslog(LOG_DEBUG, "     IMAP4: %d\n", protocols.IMAP4);
+	syslog(LOG_DEBUG, "     HTTPS: %d\n", protocols.HTTPS);
+	syslog(LOG_DEBUG, "    Others: %d\n", protocols.Others);
+	printf("protocols logged \n");
+
+	reset_protocols();
 }
 
 // the main function
@@ -397,6 +556,7 @@ int main() {
 	const u_char *packet; // actual packet
 	int num_packets; // number of packets to capture 
 	
+	reset_protocols();
 
 	// open logging machine
 	openlog("p2-advanced | sniffer", LOG_PID, LOG_USER);
