@@ -4,10 +4,6 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <syslog.h>
-#include<arpa/inet.h> // for inet_ntoa()
-#include<netinet/udp.h>   // for udp header
-#include<netinet/tcp.h>   // for tcp header
-#include<netinet/ip.h>    // for ip header
 
 #include<arpa/inet.h> // for inet_ntoa()
 #include<net/ethernet.h>
@@ -19,20 +15,24 @@
 #include<signal.h>
 #include<unistd.h>
 
+// an struct to hold name and ip of packets
 struct device {
 	
 	char name [20];
 	char ip [16];
 };
 
+// an struct to hold source and destination of a packet 
 struct IP {
 
 	char src [16];
 	char dst [16];
 };
 
+// number of captured packets
 int packet_number = 0;
 
+// an struct to save information of each session
 struct session_info {
 	int No;
 	char type [4];
@@ -46,9 +46,11 @@ struct session_info {
 	int status;
 };
 
-struct session_info session[500];
+// an array of session_info structure
+struct session_info session[1000];
 int z = 0;
 
+// an struct save number of each protocol 
 struct packet_protocol {
 
 	int FTP_DATA;
@@ -212,6 +214,7 @@ void save_session(char type[], struct IP ip, int src_port, int dst_port, int Siz
 			}
 	}
 
+	// if there is not any similiar session
 	if (flag){
 		
 		session[z].No = z+1;
@@ -292,14 +295,19 @@ void print_tcp_header(const u_char * Buffer, int Size, struct tcphdr *tcph) {
 
     syslog(LOG_INFO, "   Src port: %d\n", ntohs(tcph->source));
 	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(tcph->dest));
+	
 }
 
 // print useful data of udp header
 void print_udp_header(const u_char *Buffer , int Size, struct udphdr *udph){
-	
+
     syslog(LOG_INFO, "   Src port: %d\n", ntohs(udph->source));
 	syslog(LOG_INFO, "   Dst port: %d\n", ntohs(udph->dest));
 	
+	if ( (ntohs(udph->source) == 53) || (ntohs(udph->dest) == 53))
+		syslog(LOG_INFO, "        DNS: Yes\n");
+	else
+		syslog(LOG_INFO, "        DNS: No\n");	
 }
 
 // separate useful part of tcp packet
@@ -327,10 +335,15 @@ void Processing_tcp_packet(const u_char * Buffer, int Size) {
 	syslog(LOG_INFO, "   Protocol: TCP\n");
 	
 	print_ip_header(Size, ip);
-    print_tcp_header(Buffer, Size, tcph);
+    	print_tcp_header(Buffer, Size, tcph);
+
+	if (strstr(printable_payload, "HTTP") != NULL)
+		syslog(LOG_INFO, "       HTTP: Yes\n");
+	else 
+		syslog(LOG_INFO, "       HTTP: No\n");
 
 	syslog(LOG_INFO, "    payload: %s", printable_payload);
-	
+
 	printf("%d) TCP packet logged\n", packet_number);
 
 	save_session("tcp", ip, ntohs(tcph->source), ntohs(tcph->dest), Size, (int)tcph->fin);
@@ -476,6 +489,9 @@ char addres_class_detection(char ip_reference [20]){
 // define handle global, to use it in sig_handler function
 pcap_t *handle;
 
+// write a flag to save number of each protocol every minutes instead of 30 second.
+int one_minute_flag = 0;
+
 // run this function after 30 second of capturing
 void sig_handler(int signum){
 
@@ -515,8 +531,11 @@ void sig_handler(int signum){
 		printf("No packet captured in last 30 seconds \n");	
 	}
 
+	// save number of each protocol every minutes
+	if (one_minute_flag){
+
 	syslog(LOG_DEBUG, "\n");
-	syslog(LOG_DEBUG, "Number of packets from each type of protocol:\n");
+	syslog(LOG_DEBUG, "Number of packets from each type of protocol in last one minute:\n");
 	
 	syslog(LOG_DEBUG, "  FTP_DATA: %d\n", protocols.FTP_DATA);
 	syslog(LOG_DEBUG, "       FTP: %d\n", protocols.FTP);
@@ -532,13 +551,23 @@ void sig_handler(int signum){
 	syslog(LOG_DEBUG, "     IMAP4: %d\n", protocols.IMAP4);
 	syslog(LOG_DEBUG, "     HTTPS: %d\n", protocols.HTTPS);
 	syslog(LOG_DEBUG, "    Others: %d\n", protocols.Others);
-	printf("protocols logged \n");
+	printf("protocols in last one minute logged \n");
 
 	reset_protocols();
+
+	one_minute_flag = 0;
+
+	}else{
+		one_minute_flag = 1;	
+	}
+
 }
 
 // the main function
 int main() {
+
+	printf("Packet Sniffer\n");
+	printf("Mahdi Hejrati\n\n");
 
     struct device device; // device to sniff on
     //pcap_t *handle; // session handle
